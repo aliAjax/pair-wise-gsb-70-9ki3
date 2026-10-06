@@ -106,13 +106,15 @@ export function DashboardPage() {
         protocol: 'REST',
         status: 'draft',
         updatedAt: now,
+        revision: 1,
         openapi: JSON.stringify(parsed, null, 2),
+        modelRefs: [],
         changes: [],
         consumers: [],
         exemptions: [],
         versions: [],
       };
-      await saveContract.mutateAsync(contract);
+      await saveContract.mutateAsync({ contract });
       setImportText('');
       setImportOpen(false);
       await navigate({ to: '/contracts/$contractId', params: { contractId: contract.id } });

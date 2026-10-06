@@ -202,6 +202,13 @@ export function ReviewQueuePage() {
                       <p className="mt-1 max-w-4xl text-xs leading-5 text-slate-500">
                         {item.change.rationale}
                       </p>
+                      {item.change.invalidated && item.change.reviewState === 'pending' && (
+                        <p className="mt-1 text-[11px] font-medium text-amber-700">
+                          共享模型变更导致原结论（
+                          {REVIEW_STATE_LABELS[item.change.invalidated.previousState]}
+                          ）失效，需重新确认
+                        </p>
+                      )}
                     </div>
                     <div className="text-left text-[11px] text-slate-500 lg:text-right">
                       <div>{formatDateTime(item.updatedAt)}</div>

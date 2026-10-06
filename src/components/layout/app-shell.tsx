@@ -2,6 +2,7 @@ import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import {
   BookOpenCheck,
   ClipboardCheck,
+  Database,
   GitCompareArrows,
   LayoutDashboard,
   Network,
@@ -12,6 +13,7 @@ import { cn } from '../../lib/utils';
 const navigation = [
   { to: '/', label: '契约工作台', icon: LayoutDashboard, exact: true },
   { to: '/review', label: '批量评审', icon: ClipboardCheck, exact: false },
+  { to: '/models', label: '共享模型', icon: Database, exact: false },
   { to: '/releases', label: '版本发布', icon: PackageCheck, exact: false },
   { to: '/reports', label: '变更报告', icon: BookOpenCheck, exact: false },
 ] as const;

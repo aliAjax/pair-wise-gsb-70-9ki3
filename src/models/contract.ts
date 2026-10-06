@@ -1,13 +1,30 @@
+import type { FieldSnapshot, ModelBinding } from './shared-model';
+
 export type ContractStatus = 'draft' | 'review' | 'ready' | 'released' | 'frozen';
 export type ChangeKind =
   | 'field_added'
   | 'field_removed'
   | 'optionality_changed'
+  | 'type_changed'
   | 'enum_expanded'
   | 'error_code_added'
   | 'error_code_removed';
 export type Compatibility = 'compatible' | 'warning' | 'breaking';
 export type ReviewState = 'pending' | 'accepted' | 'returned' | 'exemption';
+
+/** 变更项的共享模型来源，origin 为字段最初定义快照 */
+export interface ModelSource {
+  modelId: string;
+  field: string;
+  origin: FieldSnapshot | null;
+}
+
+/** 模型变化导致旧评审结论失效的记录 */
+export interface ReviewInvalidation {
+  at: string;
+  reason: string;
+  previousState: ReviewState;
+}
 
 export interface ContractChange {
   id: string;
@@ -24,6 +41,8 @@ export interface ContractChange {
   reviewer: string;
   reviewComment: string;
   reviewedAt?: string;
+  source?: ModelSource;
+  invalidated?: ReviewInvalidation;
 }
 
 export interface ApiConsumer {
@@ -54,6 +73,8 @@ export interface ContractVersion {
   notes: string;
   changeIds: string[];
   openapi: string;
+  /** 冻结时的模型引用快照，冻结版本不被后续模型变化改写 */
+  modelRefs?: ModelBinding[];
 }
 
 export interface ApiContract {
@@ -65,7 +86,10 @@ export interface ApiContract {
   protocol: 'REST' | 'GraphQL' | 'gRPC-Web';
   status: ContractStatus;
   updatedAt: string;
+  /** 每次保存递增，用于并发冲突检测 */
+  revision: number;
   openapi: string;
+  modelRefs: ModelBinding[];
   changes: ContractChange[];
   consumers: ApiConsumer[];
   exemptions: Exemption[];
@@ -84,6 +108,7 @@ export const CHANGE_KIND_LABELS: Record<ChangeKind, string> = {
   field_added: '新增字段',
   field_removed: '删除字段',
   optionality_changed: '可选性变化',
+  type_changed: '类型变化',
   enum_expanded: '枚举扩展',
   error_code_added: '新增错误码',
   error_code_removed: '删除错误码',
@@ -125,6 +150,11 @@ export function classifyChange(input: {
       return {
         compatibility: 'breaking',
         rationale: '删除错误码会破坏调用方基于错误码建立的分支与重试策略。',
+      };
+    case 'type_changed':
+      return {
+        compatibility: 'breaking',
+        rationale: '字段类型变化会破坏调用方现有的序列化、解析与持久化逻辑。',
       };
     case 'field_added':
       if (/required/i.test(input.after) || /必填/.test(input.after)) {

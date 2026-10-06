@@ -9,11 +9,13 @@ import {
   GitCompare,
   Layers3,
   LockKeyhole,
+  TriangleAlert,
   Users,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChangeReviewItem } from '../components/contract/change-review-item';
 import { CompatibilityBadge } from '../components/contract/compatibility-badge';
+import { ConflictDialog } from '../components/contract/conflict-dialog';
 import { ConsumerTable } from '../components/contract/consumer-table';
 import { ContractEditor } from '../components/contract/contract-editor';
 import { Badge } from '../components/ui/badge';
@@ -48,30 +50,51 @@ import {
   useContract,
   useFreezeVersion,
   useReviewChange,
-  useSaveContract,
+  useSharedModels,
+  useUpdateChangeFields,
   useUpdateOpenApi,
 } from '../services/contract-queries';
+import { getConflict } from '../services/storage';
 import { useReviewStore } from '../store/review-store';
 
 export function ContractDetailPage() {
   const { contractId } = useParams({ from: '/contracts/$contractId' });
   const contractQuery = useContract(contractId);
+  const modelsQuery = useSharedModels();
   const activeTab = useReviewStore((state) => state.activeTab);
   const setActiveTab = useReviewStore((state) => state.setActiveTab);
   const reviewChange = useReviewChange();
   const addExemption = useAddExemption();
   const updateOpenApi = useUpdateOpenApi();
-  const saveContract = useSaveContract();
+  const updateChangeFields = useUpdateChangeFields();
   const freezeVersion = useFreezeVersion();
   const [releaseVersion, setReleaseVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
   const [reviewFilter, setReviewFilter] = useState<ReviewState | 'all'>('all');
   const [selectedVersionId, setSelectedVersionId] = useState('');
+  const [draft, setDraft] = useState('');
+  const [editorBase, setEditorBase] = useState(0);
+  const [conflict, setConflict] = useState<{ stored: ApiContract; draft: string } | null>(null);
 
   const contract = contractQuery.data;
+  const contractKey = contract?.id ?? '';
+
+  // 加载或切换契约时初始化编辑器草稿；同一契约的外部更新不覆盖草稿
+  useEffect(() => {
+    if (!contract) return;
+    setDraft(contract.openapi);
+    setEditorBase(contract.revision);
+    setConflict(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractKey]);
+
   const issues = useMemo(
     () => (contract ? validateForRelease(contract) : []),
     [contract],
+  );
+  const modelNameById = useMemo(
+    () => new Map((modelsQuery.data ?? []).map((model) => [model.id, model])),
+    [modelsQuery.data],
   );
   const blockers = issues.filter((issue) => issue.severity === 'blocker').length;
   const warnings = issues.filter((issue) => issue.severity === 'warning').length;
@@ -98,15 +121,10 @@ export function ContractDetailPage() {
     );
   }
   const currentContract = contract;
+  const externallyUpdated = contract.revision !== editorBase;
 
   async function updateChange(changeId: string, patch: Partial<ContractChange>) {
-    if (!contract) return;
-    await saveContract.mutateAsync({
-      ...contract,
-      changes: contract.changes.map((change) =>
-        change.id === changeId ? { ...change, ...patch } : change,
-      ),
-    });
+    await updateChangeFields.mutateAsync({ contractId, changeId, patch });
   }
 
   async function handleReview(changeId: string, state: ReviewState, comment: string) {
@@ -123,8 +141,38 @@ export function ContractDetailPage() {
     await addExemption.mutateAsync({ contractId, changeId, reason });
   }
 
-  async function saveOpenApi(value: string) {
-    await updateOpenApi.mutateAsync({ contractId, openapi: value });
+  async function saveOpenApi() {
+    try {
+      const updated = await updateOpenApi.mutateAsync({
+        contractId,
+        openapi: draft,
+        baseRevision: editorBase,
+      });
+      setEditorBase(updated.revision);
+    } catch (error) {
+      const info = getConflict<ApiContract>(error);
+      if (!info) throw error;
+      // 保存冲突：保留本地草稿，展示对方已保存版本
+      setConflict({ stored: info.stored, draft });
+    }
+  }
+
+  async function overwriteConflict() {
+    if (!conflict) return;
+    const updated = await updateOpenApi.mutateAsync({
+      contractId,
+      openapi: conflict.draft,
+      baseRevision: conflict.stored.revision,
+    });
+    setEditorBase(updated.revision);
+    setConflict(null);
+  }
+
+  function discardDraft() {
+    if (!conflict) return;
+    setDraft(conflict.stored.openapi);
+    setEditorBase(conflict.stored.revision);
+    setConflict(null);
   }
 
   async function freeze() {
@@ -207,12 +255,30 @@ export function ContractDetailPage() {
 
         <TabsContent value="overview">
           <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
-            <ContractEditor
-              key={`${contract.id}-${contract.openapi}`}
-              contract={contract}
-              onSave={(value) => void saveOpenApi(value)}
-              saving={updateOpenApi.isPending}
-            />
+            <div>
+              {externallyUpdated && !conflict && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+                  <span className="flex items-center gap-2 text-xs text-amber-900">
+                    <TriangleAlert className="h-4 w-4" />
+                    其他窗口已保存此契约的新版本，你的草稿基于旧版本，保存前请确认对方改动。
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConflict({ stored: contract, draft })}
+                  >
+                    查看对方改动
+                  </Button>
+                </div>
+              )}
+              <ContractEditor
+                value={draft}
+                storedValue={contract.openapi}
+                onChange={setDraft}
+                onSave={() => void saveOpenApi()}
+                saving={updateOpenApi.isPending}
+              />
+            </div>
             <div className="space-y-4">
               <Card>
                 <CardHeader>
@@ -248,6 +314,48 @@ export function ContractDetailPage() {
                       </div>
                     );
                   })}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>引用共享模型</CardTitle>
+                  <p className="mt-1 text-xs text-slate-500">
+                    模型保存时按引用关系重算本契约差异与评审结论
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {contract.modelRefs.map((binding) => {
+                    const model = modelNameById.get(binding.modelId);
+                    const stale = model && model.version !== binding.modelVersion;
+                    return (
+                      <div
+                        key={`${binding.modelId}-${binding.path}-${binding.method}`}
+                        className="flex items-start justify-between gap-3 border-b border-slate-100 pb-3 last:border-0 last:pb-0"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {model?.name ?? binding.modelId}
+                          </div>
+                          <div className="mt-1 font-mono text-[11px] text-slate-500">
+                            {binding.method} {binding.path}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge tone="neutral">同步至 v{binding.modelVersion}</Badge>
+                          {stale && (
+                            <Badge tone="amber">
+                              模型已更新 v{model.version}
+                              {contract.status === 'frozen' ? '，冻结不改写' : ''}
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!contract.modelRefs.length && (
+                    <p className="text-xs text-slate-500">未引用共享模型，字段定义内联维护。</p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -297,6 +405,9 @@ export function ContractDetailPage() {
                 <ChangeReviewItem
                   key={`${change.id}-${change.reviewState}-${change.impactStatement}-${change.migrationPlan}`}
                   change={change}
+                  modelName={
+                    change.source ? modelNameById.get(change.source.modelId)?.name : undefined
+                  }
                   onReview={(changeId, state, comment) =>
                     void handleReview(changeId, state, comment)
                   }
@@ -521,7 +632,40 @@ export function ContractDetailPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <ConflictDialog
+        open={!!conflict}
+        onOpenChange={(open) => {
+          if (!open) setConflict(null);
+        }}
+        title="契约已被其他窗口修改"
+        description="你的草稿已保留。左侧为对方已保存版本（含模型重算后的差异与评审结论），右侧为你的草稿。覆盖保存只替换 OpenAPI 定义，对方的评审记录会保留。"
+        original={
+          conflict ? contractProjection(conflict.stored.openapi, conflict.stored.changes) : ''
+        }
+        modified={conflict ? contractProjection(conflict.draft, contract.changes) : ''}
+        saving={updateOpenApi.isPending}
+        onOverwrite={() => void overwriteConflict()}
+        onDiscard={discardDraft}
+      />
     </div>
+  );
+}
+
+function contractProjection(openapi: string, changes: ContractChange[]): string {
+  return JSON.stringify(
+    {
+      openapi,
+      changes: changes.map((change) => ({
+        method: change.method,
+        path: change.path,
+        kind: change.kind,
+        after: change.after,
+        reviewState: change.reviewState,
+      })),
+    },
+    null,
+    2,
   );
 }
 

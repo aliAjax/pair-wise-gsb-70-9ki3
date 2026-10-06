@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ReviewState } from '../models/contract';
+import type { ContractChange, ReviewState } from '../models/contract';
+import type { SharedModel } from '../models/shared-model';
 import {
   addExemption,
   bulkReviewChanges,
@@ -8,12 +9,19 @@ import {
   listContracts,
   reviewChange,
   saveContract,
+  updateChangeFields,
   updateContractOpenApi,
 } from './contract-service';
+import { listSharedModels, saveSharedModel } from './model-service';
 
 export const contractKeys = {
   all: ['contracts'] as const,
   detail: (id: string) => ['contracts', id] as const,
+};
+
+export const modelKeys = {
+  all: ['shared-models'] as const,
+  detail: (id: string) => ['shared-models', id] as const,
 };
 
 export function useContracts() {
@@ -28,6 +36,13 @@ export function useContract(id: string) {
     queryKey: contractKeys.detail(id),
     queryFn: () => getContract(id),
     enabled: Boolean(id),
+  });
+}
+
+export function useSharedModels() {
+  return useQuery({
+    queryKey: modelKeys.all,
+    queryFn: listSharedModels,
   });
 }
 
@@ -74,8 +89,20 @@ export function useBulkReview() {
 export function useUpdateOpenApi() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { contractId: string; openapi: string }) =>
-      updateContractOpenApi(input.contractId, input.openapi),
+    mutationFn: (input: { contractId: string; openapi: string; baseRevision?: number }) =>
+      updateContractOpenApi(input.contractId, input.openapi, input.baseRevision),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(contractKeys.detail(updated.id), updated);
+      void queryClient.invalidateQueries({ queryKey: contractKeys.all });
+    },
+  });
+}
+
+export function useUpdateChangeFields() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { contractId: string; changeId: string; patch: Partial<ContractChange> }) =>
+      updateChangeFields(input.contractId, input.changeId, input.patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: contractKeys.all }),
   });
 }
@@ -83,8 +110,27 @@ export function useUpdateOpenApi() {
 export function useSaveContract() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: saveContract,
+    mutationFn: (input: { contract: Parameters<typeof saveContract>[0]; baseRevision?: number }) =>
+      saveContract(input.contract, input.baseRevision),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: contractKeys.all }),
+  });
+}
+
+export function useSaveSharedModel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { model: SharedModel; baseRevision: number }) =>
+      saveSharedModel(input.model, input.baseRevision),
+    onSuccess: (outcome) => {
+      queryClient.setQueryData<SharedModel[]>(modelKeys.all, (old) => {
+        const list = old ?? [];
+        return list.some((item) => item.id === outcome.model.id)
+          ? list.map((item) => (item.id === outcome.model.id ? outcome.model : item))
+          : [outcome.model, ...list];
+      });
+      void queryClient.invalidateQueries({ queryKey: modelKeys.all });
+      void queryClient.invalidateQueries({ queryKey: contractKeys.all });
+    },
   });
 }
 

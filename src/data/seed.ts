@@ -1,5 +1,93 @@
 import type { ApiContract, ChangeKind } from '../models/contract';
 import { classifyChange } from '../models/contract';
+import type { SharedModel } from '../models/shared-model';
+
+export const seedModels: SharedModel[] = [
+  {
+    id: 'model-order-query',
+    name: '订单查询响应模型',
+    domain: '交易履约',
+    owner: '订单平台组',
+    version: 3,
+    revision: 1,
+    updatedAt: '2026-09-29T03:12:00.000Z',
+    fields: [
+      { name: 'orderId', type: 'string', required: true },
+      { name: 'includeTimeline', type: 'boolean', required: false },
+      { name: 'currency', type: 'string', required: false },
+      { name: 'status', type: 'string', required: true },
+      { name: 'loyaltyDiscount', type: 'number', required: false },
+    ],
+  },
+  {
+    id: 'model-order-cancel',
+    name: '取消订单请求模型',
+    domain: '交易履约',
+    owner: '订单平台组',
+    version: 2,
+    revision: 1,
+    updatedAt: '2026-09-29T02:40:00.000Z',
+    fields: [
+      { name: 'orderId', type: 'string', required: true },
+      { name: 'reason', type: 'string', required: true },
+      { name: 'requestId', type: 'string', required: true },
+    ],
+  },
+  {
+    id: 'model-refund-create',
+    name: '退款请求模型',
+    domain: '支付结算',
+    owner: '支付平台组',
+    version: 2,
+    revision: 1,
+    updatedAt: '2026-09-28T10:40:00.000Z',
+    fields: [
+      { name: 'paymentId', type: 'string', required: true },
+      { name: 'amount', type: 'number', required: true },
+      { name: 'reason', type: 'string', required: false },
+    ],
+  },
+  {
+    id: 'model-payment-view',
+    name: '支付单查询响应模型',
+    domain: '支付结算',
+    owner: '支付平台组',
+    version: 4,
+    revision: 1,
+    updatedAt: '2026-09-28T10:40:00.000Z',
+    fields: [
+      { name: 'paymentId', type: 'string', required: true },
+      { name: 'settlementCurrency', type: 'string', required: false },
+    ],
+  },
+  {
+    id: 'model-user-view',
+    name: '用户查询响应模型',
+    domain: '身份权限',
+    owner: '身份平台组',
+    version: 2,
+    revision: 1,
+    updatedAt: '2026-09-27T06:15:00.000Z',
+    fields: [
+      { name: 'userId', type: 'string', required: true },
+      { name: 'includeRoles', type: 'boolean', required: false },
+      { name: 'effectiveRoles', type: 'array', required: false },
+    ],
+  },
+  {
+    id: 'model-audit-trail',
+    name: '通用审计字段模型',
+    domain: '平台公共',
+    owner: '架构治理组',
+    version: 1,
+    revision: 1,
+    updatedAt: '2026-09-20T08:00:00.000Z',
+    fields: [
+      { name: 'requestId', type: 'string', required: false },
+      { name: 'operatorId', type: 'string', required: false },
+    ],
+  },
+];
 
 function openApi(
   title: string,
@@ -122,7 +210,23 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'review',
     updatedAt: '2026-09-29T03:12:00.000Z',
+    revision: 1,
     openapi: orderOpenApi,
+    modelRefs: [
+      { modelId: 'model-order-query', modelVersion: 3, path: '/orders/{orderId}', method: 'GET' },
+      {
+        modelId: 'model-order-cancel',
+        modelVersion: 2,
+        path: '/orders/{orderId}/cancel',
+        method: 'POST',
+      },
+      {
+        modelId: 'model-audit-trail',
+        modelVersion: 1,
+        path: '/orders/{orderId}/cancel',
+        method: 'POST',
+      },
+    ],
     changes: [
       change(
         'chg-order-1',
@@ -136,6 +240,7 @@ export const seedContracts: ApiContract[] = [
           reviewer: '林墨',
           reviewComment: '可选响应字段，旧客户端忽略即可。',
           reviewedAt: '2026-09-29T02:10:00.000Z',
+          source: { modelId: 'model-order-query', field: 'loyaltyDiscount', origin: null },
         },
       ),
       change(
@@ -149,6 +254,11 @@ export const seedContracts: ApiContract[] = [
           impactStatement: '取消订单客户端 12 个，其中 3 个生产调用方尚未升级。',
           migrationPlan: '发布前完成三个调用方灰度升级，兼容层保留 30 天。',
           reviewState: 'pending',
+          source: {
+            modelId: 'model-order-cancel',
+            field: 'requestId',
+            origin: { type: 'string', required: false },
+          },
         },
       ),
       change(
@@ -165,6 +275,11 @@ export const seedContracts: ApiContract[] = [
           reviewer: '周言',
           reviewComment: '影响说明完整，允许进入兼容层观察。',
           reviewedAt: '2026-09-29T03:01:00.000Z',
+          source: {
+            modelId: 'model-order-query',
+            field: 'status',
+            origin: { type: 'string', required: true },
+          },
         },
       ),
     ],
@@ -229,7 +344,18 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'ready',
     updatedAt: '2026-09-28T10:40:00.000Z',
+    revision: 1,
     openapi: paymentOpenApi,
+    modelRefs: [
+      { modelId: 'model-refund-create', modelVersion: 2, path: '/refunds', method: 'POST' },
+      {
+        modelId: 'model-payment-view',
+        modelVersion: 4,
+        path: '/payments/{paymentId}',
+        method: 'GET',
+      },
+      { modelId: 'model-audit-trail', modelVersion: 1, path: '/refunds', method: 'POST' },
+    ],
     changes: [
       change(
         'chg-pay-1',
@@ -245,6 +371,11 @@ export const seedContracts: ApiContract[] = [
           reviewer: '韩度',
           reviewComment: '迁移方案未包含历史数据核对，退回补充。',
           reviewedAt: '2026-09-28T10:40:00.000Z',
+          source: {
+            modelId: 'model-payment-view',
+            field: 'settlementBatchId',
+            origin: { type: 'string', required: false },
+          },
         },
       ),
       change(
@@ -307,7 +438,11 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'review',
     updatedAt: '2026-09-27T06:15:00.000Z',
+    revision: 1,
     openapi: userOpenApi,
+    modelRefs: [
+      { modelId: 'model-user-view', modelVersion: 2, path: '/users/{userId}', method: 'GET' },
+    ],
     changes: [
       change(
         'chg-user-1',
@@ -321,6 +456,7 @@ export const seedContracts: ApiContract[] = [
           reviewer: '宋川',
           reviewComment: '可选字段，不影响旧客户端。',
           reviewedAt: '2026-09-27T06:15:00.000Z',
+          source: { modelId: 'model-user-view', field: 'effectiveRoles', origin: null },
         },
       ),
     ],

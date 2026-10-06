@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import {
   CHANGE_KIND_LABELS,
+  REVIEW_STATE_LABELS,
   type ContractChange,
   type ReviewState,
 } from '../../models/contract';
@@ -12,6 +13,8 @@ import { CompatibilityBadge, ReviewStateBadge } from './compatibility-badge';
 
 interface ChangeReviewItemProps {
   change: ContractChange;
+  /** 来源共享模型名称，用于展示 */
+  modelName?: string;
   onReview: (changeId: string, state: ReviewState, comment: string) => void;
   onUpdate: (changeId: string, patch: Partial<ContractChange>) => void;
   onExemption: (changeId: string, reason: string) => void;
@@ -19,6 +22,7 @@ interface ChangeReviewItemProps {
 
 export function ChangeReviewItem({
   change,
+  modelName,
   onReview,
   onUpdate,
   onExemption,
@@ -39,6 +43,9 @@ export function ChangeReviewItem({
             </span>
             <CompatibilityBadge value={change.compatibility} />
             <ReviewStateBadge value={change.reviewState} />
+            {change.source && (
+              <Badge tone="blue">共享模型{modelName ? ` · ${modelName}` : ''}</Badge>
+            )}
           </div>
           <h3 className="mt-2 text-sm font-semibold text-slate-900">
             {CHANGE_KIND_LABELS[change.kind]}
@@ -71,6 +78,13 @@ export function ChangeReviewItem({
           </pre>
         </div>
       </div>
+
+      {change.invalidated && change.reviewState === 'pending' && (
+        <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+          原评审结论（{REVIEW_STATE_LABELS[change.invalidated.previousState]}）已失效：
+          {change.invalidated.reason}
+        </div>
+      )}
 
       {change.compatibility !== 'compatible' && (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
