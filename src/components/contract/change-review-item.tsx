@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
+import { formatDateTime } from '../../lib/utils';
 import {
   CHANGE_KIND_LABELS,
+  REVIEW_STATE_LABELS,
   type ContractChange,
   type ReviewState,
 } from '../../models/contract';
@@ -39,6 +41,8 @@ export function ChangeReviewItem({
             </span>
             <CompatibilityBadge value={change.compatibility} />
             <ReviewStateBadge value={change.reviewState} />
+            {change.source && <Badge tone="blue">共享模型 {change.source.modelName}</Badge>}
+            {change.invalidation && <Badge tone="amber">结论已失效</Badge>}
           </div>
           <h3 className="mt-2 text-sm font-semibold text-slate-900">
             {CHANGE_KIND_LABELS[change.kind]}
@@ -52,6 +56,20 @@ export function ChangeReviewItem({
           <div className="mt-1">结论：{change.reviewComment || '尚无意见'}</div>
         </div>
       </div>
+
+      {change.invalidation && (
+        <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-900">
+          <strong>{change.invalidation.reason}</strong>
+          <span className="ml-1">
+            （原结论：{REVIEW_STATE_LABELS[change.invalidation.previousState]}
+            {change.invalidation.previousReviewer &&
+              ` · ${change.invalidation.previousReviewer}`}
+            {change.invalidation.previousComment &&
+              ` · ${change.invalidation.previousComment}`}
+            ，{formatDateTime(change.invalidation.at)}），请重新确认。
+          </span>
+        </div>
+      )}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">

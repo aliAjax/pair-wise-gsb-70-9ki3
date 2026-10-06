@@ -1,5 +1,50 @@
 import type { ApiContract, ChangeKind } from '../models/contract';
 import { classifyChange } from '../models/contract';
+import type { SharedModel } from '../models/shared-model';
+
+export const seedSharedModels: SharedModel[] = [
+  {
+    id: 'model-problem',
+    name: 'Problem',
+    domain: '公共基础',
+    owner: '平台架构组',
+    description: '统一错误响应模型，所有契约的错误返回共用。',
+    fields: [
+      { name: 'code', type: 'string', required: true, enumValues: [] },
+      { name: 'message', type: 'string', required: true, enumValues: [] },
+      { name: 'traceId', type: 'string', required: false, enumValues: [] },
+    ],
+    revision: 1,
+    updatedAt: '2026-09-20T02:00:00.000Z',
+  },
+  {
+    id: 'model-money',
+    name: 'Money',
+    domain: '支付结算',
+    owner: '支付平台组',
+    description: '金额模型，交易与支付契约共用，币种枚举由财务维护。',
+    fields: [
+      { name: 'amount', type: 'number', required: true, enumValues: [] },
+      { name: 'currency', type: 'string', required: true, enumValues: ['CNY', 'USD', 'EUR'] },
+    ],
+    revision: 1,
+    updatedAt: '2026-09-21T07:30:00.000Z',
+  },
+  {
+    id: 'model-page-request',
+    name: 'PageRequest',
+    domain: '公共基础',
+    owner: '平台架构组',
+    description: '分页请求模型，列表类接口共用。',
+    fields: [
+      { name: 'page', type: 'number', required: false, enumValues: [] },
+      { name: 'pageSize', type: 'number', required: false, enumValues: [] },
+      { name: 'sort', type: 'string', required: false, enumValues: [] },
+    ],
+    revision: 1,
+    updatedAt: '2026-09-22T09:10:00.000Z',
+  },
+];
 
 function openApi(
   title: string,
@@ -35,13 +80,6 @@ servers:
   - url: https://api.example.com
 paths:
 ${pathEntries}
-components:
-  schemas:
-    Problem:
-      type: object
-      properties:
-        code: { type: string }
-        message: { type: string }
 `;
 }
 
@@ -122,7 +160,12 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'review',
     updatedAt: '2026-09-29T03:12:00.000Z',
+    revision: 1,
     openapi: orderOpenApi,
+    modelRefs: [
+      { modelId: 'model-problem', modelName: 'Problem' },
+      { modelId: 'model-money', modelName: 'Money' },
+    ],
     changes: [
       change(
         'chg-order-1',
@@ -229,7 +272,12 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'ready',
     updatedAt: '2026-09-28T10:40:00.000Z',
+    revision: 1,
     openapi: paymentOpenApi,
+    modelRefs: [
+      { modelId: 'model-problem', modelName: 'Problem' },
+      { modelId: 'model-money', modelName: 'Money' },
+    ],
     changes: [
       change(
         'chg-pay-1',
@@ -307,7 +355,9 @@ export const seedContracts: ApiContract[] = [
     protocol: 'REST',
     status: 'review',
     updatedAt: '2026-09-27T06:15:00.000Z',
+    revision: 1,
     openapi: userOpenApi,
+    modelRefs: [{ modelId: 'model-problem', modelName: 'Problem' }],
     changes: [
       change(
         'chg-user-1',

@@ -7,6 +7,7 @@ import {
 import { AppShell } from './components/layout/app-shell';
 import { ContractDetailPage } from './pages/contract-detail-page';
 import { DashboardPage } from './pages/dashboard-page';
+import { ModelsPage } from './pages/models-page';
 import { ReleasesPage } from './pages/releases-page';
 import { ReportsPage } from './pages/reports-page';
 import { ReviewQueuePage } from './pages/review-queue-page';
@@ -42,6 +43,12 @@ const reviewRoute = createRoute({
   component: ReviewQueuePage,
 });
 
+const modelsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/models',
+  component: ModelsPage,
+});
+
 const releasesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
@@ -58,6 +65,7 @@ const routeTree = rootRoute.addChildren([
   dashboardRoute,
   contractDetailRoute,
   reviewRoute,
+  modelsRoute,
   releasesRoute,
   reportsRoute,
 ]);

@@ -192,6 +192,10 @@ export function ReviewQueuePage() {
                         <Badge tone="neutral">v{item.version}</Badge>
                         <CompatibilityBadge value={item.change.compatibility} />
                         <ReviewStateBadge value={item.change.reviewState} />
+                        {item.change.source && (
+                          <Badge tone="blue">模型 {item.change.source.modelName}</Badge>
+                        )}
+                        {item.change.invalidation && <Badge tone="amber">结论已失效</Badge>}
                       </div>
                       <div className="mt-2 font-mono text-xs text-slate-600">
                         {item.change.method} {item.change.path}

@@ -2,12 +2,29 @@ export type ContractStatus = 'draft' | 'review' | 'ready' | 'released' | 'frozen
 export type ChangeKind =
   | 'field_added'
   | 'field_removed'
+  | 'type_changed'
   | 'optionality_changed'
   | 'enum_expanded'
   | 'error_code_added'
   | 'error_code_removed';
 export type Compatibility = 'compatible' | 'warning' | 'breaking';
 export type ReviewState = 'pending' | 'accepted' | 'returned' | 'exemption';
+
+/** 变更来源：共享模型派生的变更会记录模型与字段，便于按引用关系重算 */
+export interface ChangeSource {
+  modelId: string;
+  modelName: string;
+  field: string;
+}
+
+/** 评审结论失效记录：共享模型删字段、改类型或加必填后，旧结论作废并保留备查 */
+export interface ReviewInvalidation {
+  reason: string;
+  at: string;
+  previousState: ReviewState;
+  previousReviewer: string;
+  previousComment: string;
+}
 
 export interface ContractChange {
   id: string;
@@ -24,6 +41,8 @@ export interface ContractChange {
   reviewer: string;
   reviewComment: string;
   reviewedAt?: string;
+  source?: ChangeSource;
+  invalidation?: ReviewInvalidation;
 }
 
 export interface ApiConsumer {
@@ -54,6 +73,14 @@ export interface ContractVersion {
   notes: string;
   changeIds: string[];
   openapi: string;
+  /** 冻结时引用模型的基线修订，快照内容此后不被模型变化改写 */
+  modelPins?: Array<{ modelId: string; modelName: string; revision: number }>;
+}
+
+/** 契约对共享模型的引用；生效定义 = 内联定义 + 引用模型解析结果 */
+export interface ModelRef {
+  modelId: string;
+  modelName: string;
 }
 
 export interface ApiContract {
@@ -65,7 +92,10 @@ export interface ApiContract {
   protocol: 'REST' | 'GraphQL' | 'gRPC-Web';
   status: ContractStatus;
   updatedAt: string;
+  /** 乐观并发修订号：保存时校验，冲突则保留草稿并提示对方改动 */
+  revision: number;
   openapi: string;
+  modelRefs: ModelRef[];
   changes: ContractChange[];
   consumers: ApiConsumer[];
   exemptions: Exemption[];
@@ -83,6 +113,7 @@ export interface ReleaseIssue {
 export const CHANGE_KIND_LABELS: Record<ChangeKind, string> = {
   field_added: '新增字段',
   field_removed: '删除字段',
+  type_changed: '类型变化',
   optionality_changed: '可选性变化',
   enum_expanded: '枚举扩展',
   error_code_added: '新增错误码',
@@ -120,6 +151,11 @@ export function classifyChange(input: {
       return {
         compatibility: 'breaking',
         rationale: '删除字段会使仍读取该字段的客户端解析失败或业务判断缺失。',
+      };
+    case 'type_changed':
+      return {
+        compatibility: 'breaking',
+        rationale: '字段类型变化会使按原类型解析的客户端反序列化失败。',
       };
     case 'error_code_removed':
       return {

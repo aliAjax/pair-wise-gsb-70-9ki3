@@ -16,6 +16,7 @@ import { ChangeReviewItem } from '../components/contract/change-review-item';
 import { CompatibilityBadge } from '../components/contract/compatibility-badge';
 import { ConsumerTable } from '../components/contract/consumer-table';
 import { ContractEditor } from '../components/contract/contract-editor';
+import { ModelRefsCard } from '../components/contract/model-refs-card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
@@ -47,21 +48,25 @@ import {
   useAddExemption,
   useContract,
   useFreezeVersion,
+  usePatchContractChange,
   useReviewChange,
-  useSaveContract,
+  useSetContractModelRefs,
   useUpdateOpenApi,
 } from '../services/contract-queries';
+import { useSharedModels } from '../services/shared-model-queries';
 import { useReviewStore } from '../store/review-store';
 
 export function ContractDetailPage() {
   const { contractId } = useParams({ from: '/contracts/$contractId' });
   const contractQuery = useContract(contractId);
+  const modelsQuery = useSharedModels();
   const activeTab = useReviewStore((state) => state.activeTab);
   const setActiveTab = useReviewStore((state) => state.setActiveTab);
   const reviewChange = useReviewChange();
   const addExemption = useAddExemption();
   const updateOpenApi = useUpdateOpenApi();
-  const saveContract = useSaveContract();
+  const patchChange = usePatchContractChange();
+  const setModelRefs = useSetContractModelRefs();
   const freezeVersion = useFreezeVersion();
   const [releaseVersion, setReleaseVersion] = useState('');
   const [releaseNotes, setReleaseNotes] = useState('');
@@ -100,13 +105,8 @@ export function ContractDetailPage() {
   const currentContract = contract;
 
   async function updateChange(changeId: string, patch: Partial<ContractChange>) {
-    if (!contract) return;
-    await saveContract.mutateAsync({
-      ...contract,
-      changes: contract.changes.map((change) =>
-        change.id === changeId ? { ...change, ...patch } : change,
-      ),
-    });
+    // 单变更补丁保存：基于最新存储内容修改，避免整份覆盖其他窗口的编辑
+    await patchChange.mutateAsync({ contractId, changeId, patch });
   }
 
   async function handleReview(changeId: string, state: ReviewState, comment: string) {
@@ -123,8 +123,12 @@ export function ContractDetailPage() {
     await addExemption.mutateAsync({ contractId, changeId, reason });
   }
 
-  async function saveOpenApi(value: string) {
-    await updateOpenApi.mutateAsync({ contractId, openapi: value });
+  async function saveOpenApi(input: { openapi: string; expectedRevision?: number }) {
+    return updateOpenApi.mutateAsync({ contractId, ...input });
+  }
+
+  async function handleSetModelRefs(modelIds: string[]) {
+    await setModelRefs.mutateAsync({ contractId, modelIds });
   }
 
   async function freeze() {
@@ -208,12 +212,18 @@ export function ContractDetailPage() {
         <TabsContent value="overview">
           <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
             <ContractEditor
-              key={`${contract.id}-${contract.openapi}`}
+              key={contract.id}
               contract={contract}
-              onSave={(value) => void saveOpenApi(value)}
+              saveOpenApi={saveOpenApi}
               saving={updateOpenApi.isPending}
             />
             <div className="space-y-4">
+              <ModelRefsCard
+                contract={contract}
+                models={modelsQuery.data ?? []}
+                onSetRefs={(modelIds) => void handleSetModelRefs(modelIds)}
+                saving={setModelRefs.isPending}
+              />
               <Card>
                 <CardHeader>
                   <CardTitle>评审进度</CardTitle>
@@ -424,6 +434,15 @@ export function ContractDetailPage() {
                         </span>
                       </div>
                       <p className="mt-2 text-xs leading-5 text-slate-600">{version.notes}</p>
+                      {version.modelPins?.length ? (
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          模型基线：
+                          {version.modelPins
+                            .map((pin) => `${pin.modelName}#${pin.revision}`)
+                            .join('、')}
+                          （冻结后不被模型变化改写）
+                        </p>
+                      ) : null}
                     </button>
                   ))}
                   {!contract.versions.length && (
